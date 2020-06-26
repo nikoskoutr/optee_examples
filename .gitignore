@@ -18,3 +18,17 @@ random/host/optee_example_random
 aes/host/optee_example_aes
 hotp/host/optee_example_hotp
 secure_storage/host/optee_example_secure_storage
+secure_storage/CMakeFiles/optee_example_secure_storage.dir/progress.make
+secure_storage/CMakeFiles/optee_example_secure_storage.dir/link.txt
+secure_storage/CMakeFiles/optee_example_secure_storage.dir/flags.make
+secure_storage/CMakeFiles/optee_example_secure_storage.dir/DependInfo.cmake
+secure_storage/CMakeFiles/optee_example_secure_storage.dir/depend.make
+secure_storage/CMakeFiles/optee_example_secure_storage.dir/depend.internal
+secure_storage/CMakeFiles/optee_example_secure_storage.dir/cmake_clean.cmake
+secure_storage/CMakeFiles/optee_example_secure_storage.dir/C.includecache
+secure_storage/CMakeFiles/optee_example_secure_storage.dir/build.make
+secure_storage/CMakeFiles/progress.marks
+secure_storage/CMakeFiles/CMakeDirectoryInformation.cmake
+secure_storage/optee_example_secure_storage
+secure_storage/cmake_install.cmake
+secure_storage/Makefile

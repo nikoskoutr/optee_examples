@@ -41,6 +41,12 @@ struct test_ctx {
 	TEEC_Session sess;
 };
 
+void usage(void) {
+	printf("Usage: secure_storage store -f input_file_name -i file_id\n ");
+	printf("Usage: secure_storage get -f output_file_name -i file_id\n ");
+	return(1);
+}
+
 void prepare_tee_session(struct test_ctx *ctx)
 {
 	TEEC_UUID uuid = TA_SECURE_STORAGE_UUID;
@@ -67,7 +73,7 @@ void terminate_tee_session(struct test_ctx *ctx)
 }
 
 TEEC_Result read_secure_object(struct test_ctx *ctx, char *id,
-			char *data, size_t data_len)
+			char *data, size_t *data_len)
 {
 	TEEC_Operation op;
 	uint32_t origin;
@@ -83,7 +89,7 @@ TEEC_Result read_secure_object(struct test_ctx *ctx, char *id,
 	op.params[0].tmpref.size = id_len;
 
 	op.params[1].tmpref.buffer = data;
-	op.params[1].tmpref.size = data_len;
+	op.params[1].tmpref.size = *data_len;
 
 	res = TEEC_InvokeCommand(&ctx->sess,
 				 TA_SECURE_STORAGE_CMD_READ_RAW,
@@ -96,7 +102,7 @@ TEEC_Result read_secure_object(struct test_ctx *ctx, char *id,
 	default:
 		printf("Command READ_RAW failed: 0x%x / %u\n", res, origin);
 	}
-
+	*data_len = op.params[1].tmpref.size;
 	return res;
 }
 
@@ -122,6 +128,7 @@ TEEC_Result write_secure_object(struct test_ctx *ctx, char *id,
 	res = TEEC_InvokeCommand(&ctx->sess,
 				 TA_SECURE_STORAGE_CMD_WRITE_RAW,
 				 &op, &origin);
+
 	if (res != TEEC_SUCCESS)
 		printf("Command WRITE_RAW failed: 0x%x / %u\n", res, origin);
 
@@ -166,76 +173,96 @@ TEEC_Result delete_secure_object(struct test_ctx *ctx, char *id)
 
 #define TEST_OBJECT_SIZE	7000
 
-int main(void)
+int main(int argc, char *argv[])
 {
-	struct test_ctx ctx;
-	char obj1_id[] = "object#1";		/* string identification for the object */
-	char obj2_id[] = "object#2";		/* string identification for the object */
-	char obj1_data[TEST_OBJECT_SIZE];
-	char read_data[TEST_OBJECT_SIZE];
-	TEEC_Result res;
+	char *file_name;
+	char *file_id;
 
-	printf("Prepare session with the TA\n");
-	prepare_tee_session(&ctx);
-
-	/*
-	 * Create object, read it, delete it.
-	 */
-	printf("\nTest on object \"%s\"\n", obj1_id);
-
-	printf("- Create and load object in the TA secure storage\n");
-
-	memset(obj1_data, 0xA1, sizeof(obj1_data));
-
-	res = write_secure_object(&ctx, obj1_id,
-				  obj1_data, sizeof(obj1_data));
-	if (res != TEEC_SUCCESS)
-		errx(1, "Failed to create an object in the secure storage");
-
-	printf("- Read back the object\n");
-
-	res = read_secure_object(&ctx, obj1_id,
-				 read_data, sizeof(read_data));
-	if (res != TEEC_SUCCESS)
-		errx(1, "Failed to read an object from the secure storage");
-	if (memcmp(obj1_data, read_data, sizeof(obj1_data)))
-		errx(1, "Unexpected content found in secure storage");
-
-	printf("- Delete the object\n");
-
-	res = delete_secure_object(&ctx, obj1_id);
-	if (res != TEEC_SUCCESS)
-		errx(1, "Failed to delete the object: 0x%x", res);
-
-	/*
-	 * Non volatile storage: create object2 if not found, delete it if found
-	 */
-	printf("\nTest on object \"%s\"\n", obj2_id);
-
-	res = read_secure_object(&ctx, obj2_id,
-				  read_data, sizeof(read_data));
-	if (res != TEEC_SUCCESS && res != TEEC_ERROR_ITEM_NOT_FOUND)
-		errx(1, "Unexpected status when reading an object : 0x%x", res);
-
-	if (res == TEEC_ERROR_ITEM_NOT_FOUND) {
-		char data[] = "This is data stored in the secure storage.\n";
-
-		printf("- Object not found in TA secure storage, create it.\n");
-
-		res = write_secure_object(&ctx, obj2_id,
-					  data, sizeof(data));
-		if (res != TEEC_SUCCESS)
-			errx(1, "Failed to create/load an object");
-
-	} else if (res == TEEC_SUCCESS) {
-		printf("- Object found in TA secure storage, delete it.\n");
-
-		res = delete_secure_object(&ctx, obj2_id);
-		if (res != TEEC_SUCCESS)
-			errx(1, "Failed to delete an object");
+	if( (argc != 6) && (strcmp(argv[1], "-h") != 0) ){
+		usage();
 	}
 
-	printf("\nWe're done, close and release TEE resources\n");
-	terminate_tee_session(&ctx);
-	return 0;
+	enum {STORE, GET} mode = GET;
+	if (strcmp(argv[1], "store") == 0)
+		mode = STORE;
+
+	for (int i = 2; i < argc; i=i+2){
+		if (strcmp(argv[i], "-f") == 0) {
+			file_name = argv[i+1];
+		}
+		else if (strcmp(argv[i], "-i") == 0) {
+			file_id = argv[i+1];
+		}
+		else {
+			usage();
+		}
+	}
+
+	// Read or write file open
+	// TODO: Close files afterwards
+	
+	if(mode == STORE) {
+		char *buffer = NULL;
+		FILE *file_handle = NULL;
+		file_handle = fopen(file_name, "rb");
+		fseek(file_handle, 0L, SEEK_END); // Go to the end of the file
+    	long size = ftell(file_handle); // Get file size
+    	rewind(file_handle); // Go to the beginning of the file
+    	buffer = malloc(size); // Allocate a buffer the size of the file
+		fread(buffer, size, 1, file_handle); // Copy file contents to the buffer
+		
+		fclose(file_handle); file_handle = NULL; // Close and nullify the file
+
+		struct test_ctx ctx;
+		TEEC_Result res;
+		prepare_tee_session(&ctx);
+		res = write_secure_object(&ctx, file_id,
+					buffer, size);
+		if (res != TEEC_SUCCESS)
+			errx(1, "Failed to create an object in the secure storage");
+
+		printf("\nWe're done, close and release TEE resources\n");
+		terminate_tee_session(&ctx);
+		return 0;
+
+	} else if (mode == GET) {
+
+		char *buffer[7000];
+		FILE *file_handle = NULL;
+		struct test_ctx ctx;
+		TEEC_Result res;
+		prepare_tee_session(&ctx);
+		size_t size = sizeof(buffer);
+		res = read_secure_object(&ctx, file_id,
+					buffer, &size);
+		if (res != TEEC_SUCCESS)
+			errx(1, "Failed to read an object from the secure storage");
+		
+		file_handle = fopen(file_name, "wb");
+		fwrite(buffer, size, 1, file_handle);
+
+		fclose(file_handle); file_handle = NULL;
+
+		printf("\nWe're done, close and release TEE resources\n");
+		terminate_tee_session(&ctx);
+		return 0;
+	}
+
+
+
+	
+	// res = write_secure_object(&ctx, file_id,
+	// 			  buffer, sizeof(buffer));
+	// if (res != TEEC_SUCCESS)
+	// 	errx(1, "Failed to create an object in the secure storage");
+
+
+	
+
+	// res = delete_secure_object(&ctx, obj1_id);
+	// if (res != TEEC_SUCCESS)
+	// 	errx(1, "Failed to delete the object: 0x%x", res);
+
+
+	
 }
